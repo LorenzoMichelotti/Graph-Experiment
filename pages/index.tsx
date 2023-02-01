@@ -1,11 +1,181 @@
-import Head from 'next/head'
-import Image from 'next/image'
-import { Inter } from '@next/font/google'
-import styles from '@/styles/Home.module.css'
+import Head from "next/head";
+import { useEffect, useRef, useState } from "react";
 
-const inter = Inter({ subsets: ['latin'] })
+interface Node {
+  id: number;
+  position: number[];
+  radius: number;
+  active?: boolean;
+}
 
 export default function Home() {
+  let activeNode = -1;
+  let dragging = false;
+  let draggingExistingNode = false;
+  let mode = 0;
+
+  const nodes: Node[] = [
+    { id: 1, position: [100, 200], radius: 40 },
+    { id: 2, position: [200, 150], radius: 40 },
+    { id: 3, position: [300, 300], radius: 40 },
+  ];
+  const connections = [
+    [1, 2],
+    [2, 3],
+  ];
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  function renderNodes(ctx: CanvasRenderingContext2D) {
+    nodes.forEach((node) => {
+      ctx.beginPath();
+      ctx.arc(node.position[0], node.position[1], node.radius, 0, 2 * Math.PI);
+      if (node.active) {
+        ctx.shadowColor = "#000000";
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 4;
+      }
+      if (activeNode == node.id) {
+        ctx.fillStyle = "#9DD4FF";
+      } else ctx.fillStyle = "#ffff";
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.stroke();
+      ctx.fillStyle = "#000000";
+      ctx.fillText(
+        node.id.toString(),
+        node.position[0] - 6,
+        node.position[1] + 6
+      );
+    });
+  }
+
+  function renderConnections(ctx: CanvasRenderingContext2D) {
+    connections.forEach((connection) => {
+      const startNode = nodes.find((node) => node.id === connection[0]);
+      const endNode = nodes.find((node) => node.id === connection[1]);
+      if (!startNode || !endNode) return;
+      ctx.beginPath();
+      ctx.moveTo(startNode?.position[0], startNode?.position[1]);
+      ctx.lineTo(endNode?.position[0], endNode?.position[1]);
+      ctx.stroke();
+    });
+  }
+
+  function renderClear(ctx: CanvasRenderingContext2D) {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  }
+
+  function renderNodeGraph(ctx: CanvasRenderingContext2D) {
+    renderClear(ctx);
+    renderConnections(ctx);
+    renderNodes(ctx);
+  }
+
+  function render() {
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext("2d");
+      if (!ctx) return;
+      ctx.font = "24px Arial";
+
+      renderNodeGraph(ctx);
+    }
+  }
+
+  function addConnection(toId: number) {
+    const newConn = [activeNode, toId];
+    const existing = connections.findIndex(
+      (conn) =>
+        (conn[0] == newConn[0] && conn[1] == newConn[1]) ||
+        (conn[0] == newConn[1] && conn[1] == newConn[0])
+    );
+    if (existing == -1) {
+      console.log("creating new connection from ", activeNode, " to ", toId);
+      connections.push(newConn);
+    } else {
+      connections.splice(existing, 1);
+    }
+  }
+
+  function handleMouseDown(e: MouseEvent) {
+    dragging = true;
+    draggingExistingNode = false;
+    nodes.forEach((node) => {
+      const minX = node.position[0] - 40;
+      const maxX = node.position[0] + 40;
+      const minY = node.position[1] - 40;
+      const maxY = node.position[1] + 40;
+
+      if (
+        e.offsetX >= minX &&
+        e.offsetX <= maxX &&
+        e.offsetY >= minY &&
+        e.offsetY <= maxY
+      ) {
+        if (mode == 1 && activeNode != node.id && activeNode != -1) {
+          addConnection(node.id);
+        }
+        activeNode = node.id;
+        node.active = true;
+        draggingExistingNode = true;
+      } else {
+        // console.log("blank");
+        // activeNode = -1;
+      }
+      render();
+    });
+  }
+
+  function createNode(position: number[]) {
+    const newNode: Node = {
+      id: nodes.length + 1,
+      position: position,
+      radius: 40,
+    };
+    nodes.push(newNode);
+  }
+
+  function handleMouseUp(e: MouseEvent) {
+    dragging = false;
+
+    if (!draggingExistingNode && mode == 2) {
+      createNode([e.offsetX, e.offsetY]);
+    } else {
+      draggingExistingNode = false;
+    }
+
+    const currentNode = nodes.find((node) => node.id === activeNode);
+    if (currentNode) currentNode.active = false;
+    // activeNode = -1;
+    render();
+  }
+
+  function handleMouseMove(e: MouseEvent) {
+    if (!dragging || !draggingExistingNode) return;
+    const node = nodes.find((node) => node.id === activeNode);
+    if (!node) return;
+    if (mode == 0) {
+      node.position[0] = e.offsetX;
+      node.position[1] = e.offsetY;
+    }
+    render();
+  }
+
+  useEffect(() => {
+    render();
+    if (!canvasRef.current) return;
+    canvasRef.current.addEventListener("mousedown", handleMouseDown);
+    canvasRef.current.addEventListener("mousemove", handleMouseMove);
+    canvasRef.current.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      if (!canvasRef.current) return;
+      canvasRef.current.removeEventListener("mousedown", handleMouseDown);
+      canvasRef.current.removeEventListener("mousemove", handleMouseMove);
+      canvasRef.current.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   return (
     <>
       <Head>
@@ -14,110 +184,29 @@ export default function Home() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      <main className={styles.main}>
-        <div className={styles.description}>
-          <p>
-            Get started by editing&nbsp;
-            <code className={styles.code}>pages/index.tsx</code>
-          </p>
-          <div>
-            <a
-              href="https://vercel.com?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              By{' '}
-              <Image
-                src="/vercel.svg"
-                alt="Vercel Logo"
-                className={styles.vercelLogo}
-                width={100}
-                height={24}
-                priority
-              />
-            </a>
-          </div>
+      <main>
+        <div className="flex space-x-4 p-4">
+          <button
+            onClick={() => (mode = 0)}
+            className="bg-gray-200 w-12 h-12 rounded-lg"
+          >
+            M
+          </button>
+          <button
+            onClick={() => (mode = 1)}
+            className="bg-gray-200 w-12 h-12 rounded-lg"
+          >
+            L
+          </button>
+          <button
+            onClick={() => (mode = 2)}
+            className="bg-gray-200 w-12 h-12 rounded-lg"
+          >
+            C
+          </button>
         </div>
-
-        <div className={styles.center}>
-          <Image
-            className={styles.logo}
-            src="/next.svg"
-            alt="Next.js Logo"
-            width={180}
-            height={37}
-            priority
-          />
-          <div className={styles.thirteen}>
-            <Image
-              src="/thirteen.svg"
-              alt="13"
-              width={40}
-              height={31}
-              priority
-            />
-          </div>
-        </div>
-
-        <div className={styles.grid}>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2 className={inter.className}>
-              Docs <span>-&gt;</span>
-            </h2>
-            <p className={inter.className}>
-              Find in-depth information about Next.js features and&nbsp;API.
-            </p>
-          </a>
-
-          <a
-            href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2 className={inter.className}>
-              Learn <span>-&gt;</span>
-            </h2>
-            <p className={inter.className}>
-              Learn about Next.js in an interactive course with&nbsp;quizzes!
-            </p>
-          </a>
-
-          <a
-            href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2 className={inter.className}>
-              Templates <span>-&gt;</span>
-            </h2>
-            <p className={inter.className}>
-              Discover and deploy boilerplate example Next.js&nbsp;projects.
-            </p>
-          </a>
-
-          <a
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2 className={inter.className}>
-              Deploy <span>-&gt;</span>
-            </h2>
-            <p className={inter.className}>
-              Instantly deploy your Next.js site to a shareable URL
-              with&nbsp;Vercel.
-            </p>
-          </a>
-        </div>
+        <canvas ref={canvasRef} width={1000} height={500}></canvas>
       </main>
     </>
-  )
+  );
 }
